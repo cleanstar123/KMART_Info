@@ -140,19 +140,19 @@
 
 ### Frontend (React + TypeScript)
 
-| 카테고리 | 기술 | 버전 | 선정 이유 |
-|----------|------|------|----------|
-| **Language** | TypeScript | 5.x | 타입 안정성, 생산성 |
-| **Framework** | React | 18.x | 컴포넌트 재사용, 생태계 |
-| **State** | Zustand | 4.x | 가볍고 직관적 |
-| **Routing** | React Router | 6.x | SPA 라우팅 표준 |
-| **UI Library** | Ant Design | 5.x | 관리자 화면에 최적화 |
-| **HTTP** | TanStack Query | 5.x | 서버 상태 관리, 캐싱 |
-| **Form** | React Hook Form | 7.x | 폼 성능, 검증 |
-| **Table** | Ant Design Table | - | 정렬, 필터, 페이징 |
-| **Chart** | ECharts | 5.x | 대시보드 차트 |
-| **Excel** | SheetJS | - | Excel 내보내기 |
-| **Build** | Vite | 5.x | 빠른 빌드, HMR |
+| 카테고리           | 기술               | 버전   | 선정 이유         |
+| -------------- | ---------------- | ---- | ------------- |
+| **Language**   | TypeScript       | 5.x  | 타입 안정성, 생산성   |
+| **Framework**  | React            | 18.x | 컴포넌트 재사용, 생태계 |
+| **State**      | Zustand          | 4.x  | 가볍고 직관적       |
+| **Routing**    | React Router     | 6.x  | SPA 라우팅 표준    |
+| **UI Library** | Ant Design       | 5.x  | 관리자 화면에 최적화   |
+| **HTTP**       | TanStack Query   | 5.x  | 서버 상태 관리, 캐싱  |
+| **Form**       | React Hook Form  | 7.x  | 폼 성능, 검증      |
+| **Table**      | Ant Design Table | -    | 정렬, 필터, 페이징   |
+| **Chart**      | ECharts          | 5.x  | 대시보드 차트       |
+| **Excel**      | SheetJS          | -    | Excel 내보내기    |
+| **Build**      | Vite             | 5.x  | 빠른 빌드, HMR    |
 
 **선정 이유:**
 - 화면 기획서에서 이미 기본 구조 정의
@@ -161,14 +161,14 @@
 
 ### Mobile/PDA (Flutter)
 
-| 카테고리 | 기술 | 선정 이유 |
-|----------|------|----------|
-| **Framework** | Flutter | 3.x | 크로스 플랫폼, 성능 |
-| **Language** | Dart | - | Flutter 네이티브 |
-| **State** | Riverpod | 2.x | 상태 관리 |
-| **Local DB** | Hive / SQLite | - | 오프라인 지원 |
-| **Barcode** | mobile_scanner | - | 바코드/QR 스캔 |
-| **HTTP** | Dio | - | API 통신 |
+| 카테고리          | 기술             | 선정 이유 |              |
+| ------------- | -------------- | ----- | ------------ |
+| **Framework** | Flutter        | 3.x   | 크로스 플랫폼, 성능  |
+| **Language**  | Dart           | -     | Flutter 네이티브 |
+| **State**     | Riverpod       | 2.x   | 상태 관리        |
+| **Local DB**  | Hive / SQLite  | -     | 오프라인 지원      |
+| **Barcode**   | mobile_scanner | -     | 바코드/QR 스캔    |
+| **HTTP**      | Dio            | -     | API 통신       |
 
 **선정 이유:**
 - Android PDA 기기 대응 필수
@@ -177,11 +177,11 @@
 
 ### Database
 
-| 카테고리 | 기술 | 버전 | 선정 이유 |
-|----------|------|------|----------|
+| 카테고리      | 기술         | 버전  | 선정 이유              |
+| --------- | ---------- | --- | ------------------ |
 | **RDBMS** | PostgreSQL | 15+ | 화면 기획서 기준, JSON 지원 |
-| **Cache** | Redis | 7.x | 세션, 재고 캐싱 |
-| **File** | MinIO / S3 | - | 송장, 문서 저장 |
+| **Cache** | Redis      | 7.x | 세션, 재고 캐싱          |
+| **File**  | MinIO / S3 | -   | 송장, 문서 저장          |
 
 ### Infrastructure
 
