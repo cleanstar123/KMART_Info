@@ -185,14 +185,14 @@
 
 ### Infrastructure
 
-| 카테고리 | 기술 | 선정 이유 |
-|----------|------|----------|
-| **Container** | Docker | 환경 일관성 |
-| **Orchestration** | Docker Compose (초기) | 소규모 운영 |
-| **Web Server** | Nginx | 리버스 프록시, 정적 파일 |
-| **CI/CD** | GitHub Actions | 무료, 간편 |
-| **Monitoring** | Grafana + Prometheus | 메트릭 시각화 |
-| **Logging** | Loki + Grafana | 로그 수집/조회 |
+| 카테고리              | 기술                   | 선정 이유          |
+| ----------------- | -------------------- | -------------- |
+| **Container**     | Docker               | 환경 일관성         |
+| **Orchestration** | Docker Compose (초기)  | 소규모 운영         |
+| **Web Server**    | Nginx                | 리버스 프록시, 정적 파일 |
+| **CI/CD**         | GitHub Actions       | 무료, 간편         |
+| **Monitoring**    | Grafana + Prometheus | 메트릭 시각화        |
+| **Logging**       | Loki + Grafana       | 로그 수집/조회       |
 
 ---
 
