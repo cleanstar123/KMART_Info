@@ -237,15 +237,15 @@ context.go('/');            // 스택 초기화 후 이동
 `sqflite`를 사용하여 기기 내 SQLite DB를 관리합니다.  
 DB 파일명: `wms_pda_app.db`
 
-| 테이블명 | 설명 |
-|---|---|
-| `wms_if_item` | 상품 마스터 (ERP에서 동기화된 상품 정보) |
-| `wms_if_location` | 로케이션 마스터 (창고 위치 정보) |
-| `wms_pick_task_h` | 피킹 작업 헤더 (피킹 지시 단위) |
-| `wms_pick_task_d` | 피킹 작업 상세 (피킹 라인별 상품/수량) |
-| `wms_pick_scan_log` | 바코드 스캔 이력 로그 |
-| `wms_sync_outbox` | 서버 동기화 대기 큐 (Outbox 패턴) |
-| `wms_sync_log` | 서버 동기화 결과 로그 |
+| 테이블명                | 설명                        |
+| ------------------- | ------------------------- |
+| `wms_if_item`       | 상품 마스터 (ERP에서 동기화된 상품 정보) |
+| `wms_if_location`   | 로케이션 마스터 (창고 위치 정보)       |
+| `wms_pick_task_h`   | 피킹 작업 헤더 (피킹 지시 단위)       |
+| `wms_pick_task_d`   | 피킹 작업 상세 (피킹 라인별 상품/수량)   |
+| `wms_pick_scan_log` | 바코드 스캔 이력 로그              |
+| `wms_sync_outbox`   | 서버 동기화 대기 큐 (Outbox 패턴)   |
+| `wms_sync_log`      | 서버 동기화 결과 로그              |
 
 ### Outbox 패턴 동작 방식
 
