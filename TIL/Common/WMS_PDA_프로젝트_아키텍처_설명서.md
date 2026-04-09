@@ -117,7 +117,7 @@ lib/
 | `features` | 업무 기능 모듈 | 로그인, 홈, 피킹, 상품/입고/재고 관련 기능 |
 | `shared` | 범용 재사용 자원 | 여러 feature에서 공통으로 쓰는 enum, model, provider, widget |
 
-이 분리는 Flutter 프로젝트 구조 가이드에서 제안한 `app / core / features / shared` 패턴과 동일한 계열이다. fileciteturn0file6
+이 분리는 Flutter 프로젝트 구조 가이드에서 제안한 `app / core / features / shared` 패턴과 동일한 계열이다.
 
 ---
 
@@ -347,7 +347,7 @@ API 통신 기반을 담당한다.
 
 PDA 스캐너 연동 공통 계층이다.
 
-PDA 기술 스택 정의서에서는 Scanner Adapter, ScannerService 인터페이스, 벤더별 구현 분리를 핵심 요소로 설명한다. fileciteturn0file4
+PDA 기술 스택 정의서에서는 Scanner Adapter, ScannerService 인터페이스, 벤더별 구현 분리를 핵심 요소로 설명한다.
 
 관리 대상 예시:
 - ScannerService 인터페이스
