@@ -19,16 +19,16 @@
 
 ### 1-1. 기술 스택 (현재 확정)
 
-| 레이어 | 라이브러리 | 버전 | 용도 |
-|--------|-----------|------|------|
-| 상태관리 | flutter_riverpod | ^2.5.1 | StateNotifier 패턴 |
-| 라우팅 | go_router | ^14.2.0 | 선언형 네비게이션 |
-| HTTP | dio | ^5.7.0 | REST API 통신 |
-| 로컬 DB | sqflite | ^2.3.3+1 | SQLite (모바일) |
-| 보조 DB | sembast | ^3.7.1 | NoSQL (선택적) |
-| 네트워크 감지 | connectivity_plus | ^6.0.5 | 온/오프라인 상태 감지 |
-| 암호화 | crypto + encrypt | ^3.0.6 / ^5.0.3 | SHA-256 / AES-256 |
-| ID 생성 | uuid | ^4.5.1 | Outbox ID 등 |
+| 레이어     | 라이브러리             | 버전              | 용도                |
+| ------- | ----------------- | --------------- | ----------------- |
+| 상태관리    | flutter_riverpod  | ^2.5.1          | StateNotifier 패턴  |
+| 라우팅     | go_router         | ^14.2.0         | 선언형 네비게이션         |
+| HTTP    | dio               | ^5.7.0          | REST API 통신       |
+| 로컬 DB   | sqflite           | ^2.3.3+1        | SQLite (모바일)      |
+| 보조 DB   | sembast           | ^3.7.1          | NoSQL (선택적)       |
+| 네트워크 감지 | connectivity_plus | ^6.0.5          | 온/오프라인 상태 감지      |
+| 암호화     | crypto + encrypt  | ^3.0.6 / ^5.0.3 | SHA-256 / AES-256 |
+| ID 생성   | uuid              | ^4.5.1          | Outbox ID 등       |
 
 ### 1-2. 이미 구현된 Offline 지원
 
