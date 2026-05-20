@@ -195,13 +195,13 @@ flowchart TD
 
 ### 5.2 온라인 vs 오프라인 비교
 
-| 구분 | 온라인 (API) | 오프라인 (LOCAL) |
-|------|----------------|------------------|
-| **트리거** | API 호출 성공 | `NetworkException`만 |
-| **비밀번호 검증** | 서버 BCrypt | 로컬 SHA-256(`auth_pwd`) |
-| **JWT** | `AuthTokenHolder`에 저장 | 없음 (이후 API는 토큰 없음) |
-| **로그 `login_type_cd`** | `API` | `LOCAL` |
-| **선행 조건** | 네트워크 + 유효 계정 | **과거 온라인 로그인 1회 이상** (해시 존재) |
+| 구분                     | 온라인 (API)             | 오프라인 (LOCAL)                 |
+| ---------------------- | --------------------- | ---------------------------- |
+| **트리거**                | API 호출 성공             | `NetworkException`만          |
+| **비밀번호 검증**            | 서버 BCrypt             | 로컬 SHA-256(`auth_pwd`)       |
+| **JWT**                | `AuthTokenHolder`에 저장 | 없음 (이후 API는 토큰 없음)           |
+| **로그 `login_type_cd`** | `API`                 | `LOCAL`                      |
+| **선행 조건**              | 네트워크 + 유효 계정          | **과거 온라인 로그인 1회 이상** (해시 존재) |
 
 ### 5.3 오프라인 폴백 **하지 않는** 경우
 
@@ -217,10 +217,10 @@ flowchart TD
 
 ### 5.4 오프라인 실패 세분화
 
-| 상태 | `existsActiveUser` | `hasOfflineCredentials` | 예외 | UI 메시지 키 |
-|------|--------------------|-------------------------|------|----------------|
-| Sync된 계정, 온라인 1회 미로그인 | true | false | `OfflineNeedOnlineFirstException` | `auth.error.need_online_first` |
-| 로컬에 계정 자체가 없음 | false | false | 동일 | `auth.error.offline_fallback` |
+| 상태                    | `existsActiveUser` | `hasOfflineCredentials` | 예외                                | UI 메시지 키                       |
+| --------------------- | ------------------ | ----------------------- | --------------------------------- | ------------------------------ |
+| Sync된 계정, 온라인 1회 미로그인 | true               | false                   | `OfflineNeedOnlineFirstException` | `auth.error.need_online_first` |
+| 로컬에 계정 자체가 없음         | false              | false                   | 동일                                | `auth.error.offline_fallback`  |
 
 ---
 
