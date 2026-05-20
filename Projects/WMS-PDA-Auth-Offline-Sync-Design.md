@@ -5,18 +5,18 @@
 > **기준 코드**  
 > - PDA: `wms_pda_app/lib/features/auth/`  
 > - 백엔드: `wms_backend` — `AuthController`, `cm_user`  
-> **관련 문서**: [WMS-PDA-UI-Component-Spec.md](./WMS-PDA-UI-Component-Spec.md), [K-Market-WMS-Overview.md](./K-Market-WMS-Overview.md)
+> **관련 문서**: [WMS-PDA-UI.md](./WMS-PDA-UI.md), [K-Market-WMS-Overview.md](./K-Market-WMS-Overview.md)
 
 ---
 
 ## 1. 설계 목표
 
-| 목표 | 설명 |
-|------|------|
-| **온라인 우선** | Wi-Fi 가능 시 백엔드(`wms_backend`)가 인증·사용자 마스터의 Source of Truth |
-| **오프라인 폴백** | 네트워크 불가 시, **이전에 온라인 로그인에 성공한 계정**만 로컬 DB로 로그인 |
-| **기동 시 Sync** | 앱 시작 시 사용자 **목록**(비밀번호 제외)을 받아 로컬 DB 갱신 |
-| **보안 분리** | 서버 비밀번호(BCrypt)는 내려받지 않음. 로컬에는 온라인 로그인 성공 시에만 SHA-256 해시 저장 |
+| 목표            | 설명                                                          |
+| ------------- | ----------------------------------------------------------- |
+| **온라인 우선**    | Wi-Fi 가능 시 백엔드(`wms_backend`)가 인증·사용자 마스터의 Source of Truth  |
+| **오프라인 폴백**   | 네트워크 불가 시, **이전에 온라인 로그인에 성공한 계정**만 로컬 DB로 로그인              |
+| **기동 시 Sync** | 앱 시작 시 사용자 **목록**(비밀번호 제외)을 받아 로컬 DB 갱신                     |
+| **보안 분리**     | 서버 비밀번호(BCrypt)는 내려받지 않음. 로컬에는 온라인 로그인 성공 시에만 SHA-256 해시 저장 |
 
 ---
 
@@ -58,14 +58,14 @@ flowchart TB
 
 ### 2.1 레이어별 역할
 
-| 레이어 | 파일 | 책임 |
-|--------|------|------|
-| **진입점** | `main.dart` | DB 초기화 → i18n 초기화 → **사용자 Sync** → 앱 실행 |
-| **Repository** | `auth_repository.dart` | 온라인/오프라인 로그인 분기, Sync 오케스트레이션 |
-| **Remote** | `auth_remote_datasource.dart` | `POST /auth/login`, `GET /auth/users` |
-| **Local** | `auth_local_datasource.dart` (모바일) / `web_auth_local_datasource.dart` (Web) | SQLite·Sembast CRUD |
-| **로그** | `login_log_datasource.dart` | `wms_login_log` — API/LOCAL 성공·실패 기록 |
-| **세션** | `auth_session_provider`, `auth_token_holder` | 로그인 후 JWT·UserModel 보관 |
+| 레이어            | 파일                                                                          | 책임                                      |
+| -------------- | --------------------------------------------------------------------------- | --------------------------------------- |
+| **진입점**        | `main.dart`                                                                 | DB 초기화 → i18n 초기화 → **사용자 Sync** → 앱 실행 |
+| **Repository** | `auth_repository.dart`                                                      | 온라인/오프라인 로그인 분기, Sync 오케스트레이션           |
+| **Remote**     | `auth_remote_datasource.dart`                                               | `POST /auth/login`, `GET /auth/users`   |
+| **Local**      | `auth_local_datasource.dart` (모바일) / `web_auth_local_datasource.dart` (Web) | SQLite·Sembast CRUD                     |
+| **로그**         | `login_log_datasource.dart`                                                 | `wms_login_log` — API/LOCAL 성공·실패 기록    |
+| **세션**         | `auth_session_provider`, `auth_token_holder`                                | 로그인 후 JWT·UserModel 보관                  |
 
 ---
 
