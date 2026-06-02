@@ -1,6 +1,7 @@
 # 상품입고검수 기능 구현 상세 정리
 
-> 작성일: 2026-06-02  
+> 최초 작성일: 2026-06-02  
+> 최종 수정일: 2026-06-02  
 > 프로젝트: K-MART WMS PDA App  
 > 브랜치: dev_wonjun
 
@@ -12,8 +13,8 @@
 |------|------|
 | 화면명 | 상품입고검수 |
 | 진입 경로 | 홈 메뉴 → 상품입고검수 |
-| 대상 데이터 | `ib_stts_cd = '03'` (입고완료) 상태의 컨테이너만 표시 |
-| 검수 흐름 | 컨테이너 목록 → 컨테이너 상세 → 상품별 정상/불량 수량 입력 → 확인(중간저장) / 검수 완료 |
+| 대상 데이터 | `ib_stts_cd IN ('01', '02')` — 검수전·검수중 컨테이너만 표시 |
+| 검수 흐름 | 컨테이너 목록 → 컨테이너 상세 → 상품별 정상/불량 수량 입력 → 저장(중간저장) / 검수 완료 |
 | 오프라인 지원 | 오프라인 시 로컬 DB에 저장 + 아웃박스 큐 적재, 온라인 복구 시 자동 전송 |
 
 ---
@@ -26,52 +27,82 @@
 | 컬럼 | 설명 |
 |------|------|
 | `ib_no` | 입고번호 (PK) |
-| `ib_stts_cd` | 입고상태 (`01`=예정, `02`=진행중, `03`=입고완료) |
+| `ib_stts_cd` | 입고상태 (`01`=검수전, `02`=검수중, `03`=검수완료) |
+| `ib_type_cd` | 입고유형 (`01`=해외수입, `02`=현지매입, `03`=반품) |
 | `tot_po_qty` | 총 발주수량 |
 | `tot_ib_qty` | 총 입고수량 |
 | `asn_dt` | 입고예정일 (정렬 기준) |
+| `ib_dt` | 실제 입고일 (검수완료 시 자동 세팅) |
 | `center_id` | 센터코드 (`HN`, `HC`) |
 
 #### `wms.ib_list_dtl` (입고 상세)
 | 컬럼 | 설명 |
 |------|------|
 | `ins_stts_cd` | 검수상태 (`01`=대기, `02`=검수중, `03`=검수완료) |
-| `ib_qty` | 실제 입고수량 (검수 완료 기준값) |
+| `ib_qty` | 실제 입고수량 (현지매입·반품은 검수 후 `ins_qty + defect_qty`로 갱신) |
 | `ins_qty` | 검수자가 입력한 정상수량 |
-| `rmrk` | 불량수량 저장 포맷: `DEFECT:{n}` |
+| `defect_qty` | 검수자가 입력한 불량수량 (신규 컬럼) |
 | `po_qty` | 발주수량 (참고용 표시) |
+| `rmrk` | 비고 (향후 활용을 위해 유지, DEFECT 패턴 방식은 제거됨) |
 
-### 2-2. 로컬 SQLite 마이그레이션 (v9 → v10)
+### 2-2. ib_stts_cd 상태 전이
+
+```
+01 (검수전)
+  └─▶ [저장 버튼] ─▶ 02 (검수중)   : dtl ins_stts_cd='02', hdr ib_stts_cd='02' (01→02만 전이)
+                                        현지매입·반품: dtl.ib_qty, hdr.tot_ib_qty 갱신
+  └─▶ [검수완료 버튼] ─▶ 03 (검수완료) : dtl ins_stts_cd='03', hdr ib_stts_cd='03', hdr.ib_dt 세팅
+                                          현지매입·반품: dtl.ib_qty, hdr.tot_ib_qty 갱신
+02 (검수중)
+  └─▶ [저장 버튼] ─▶ 02 유지 (조건: ib_stts_cd='01'일 때만 02로 전이, 이미 02면 유지)
+  └─▶ [검수완료 버튼] ─▶ 03 (검수완료)
+
+03 (검수완료) → 목록에서 제외 (조회 조건: IN ('01','02'))
+```
+
+### 2-3. ib_type_cd 분기 처리 (현지매입·반품)
+
+`ib_type_cd IN ('02', '03')` 인 경우:
+- 현지매입·반품은 `po_qty = ib_qty`로 초기 세팅되어 있으나 검수 후 수량이 다를 수 있음
+- **저장/검수완료 모두**: `dtl.ib_qty = ins_qty + defect_qty` 로 갱신
+- **저장 시**: `hdr.tot_ib_qty = SUM(dtl.ib_qty)` 별도 갱신
+- **검수완료 시**: `updateInboundAsnConfirmed`가 `ib_stts_cd='03'`, `ib_dt`, `tot_ib_qty` 일괄 처리
+
+### 2-4. 로컬 SQLite 마이그레이션
 
 ```dart
-// app_database.dart
-if (oldVersion < 10) await _addInsQtyColumnToIbListDtl(db);
+// app_database.dart — v11 (defect_qty 컬럼 추가)
+static const int _dbVersion = 11;
 
-static Future<void> _addInsQtyColumnToIbListDtl(Database db) async {
-  if (await _columnExists(db, tableIbListDtl, 'ins_qty')) return;
+// onUpgrade
+if (oldVersion < 10) await _addInsQtyColumnToIbListDtl(db);
+if (oldVersion < 11) await _addDefectQtyColumnToIbListDtl(db);
+
+static Future<void> _addDefectQtyColumnToIbListDtl(Database db) async {
+  if (await _columnExists(db, tableIbListDtl, 'defect_qty')) return;
   await db.execute(
-    'ALTER TABLE $tableIbListDtl ADD COLUMN ins_qty INTEGER NOT NULL DEFAULT 0',
+    'ALTER TABLE $tableIbListDtl ADD COLUMN defect_qty INTEGER NOT NULL DEFAULT 0',
   );
 }
 ```
 
-`ib_list_dtl` CREATE TABLE에도 `ins_qty INTEGER NOT NULL DEFAULT 0` 추가.
+`ib_list_dtl` CREATE TABLE에도 `defect_qty INTEGER NOT NULL DEFAULT 0` 추가 (신규 설치 기준).
 
 ---
 
 ## 3. 백엔드 구현
 
-### 3-1. 신규 API 엔드포인트
+### 3-1. API 엔드포인트
 
 ```
-PATCH /inbound/pda/{ibNo}/inspect
+GET  /inbound/pda/sync?centerId={id}&since={datetime}   → 입고 목록 동기화
+PATCH /inbound/pda/{ibNo}/inspect                        → 검수 저장/완료
 ```
 
 - **인증**: Spring Security `permitAll` (`/inbound/pda/**`)
-- **요청 Body**: `InboundPdaInspectRequest`
-- **응답**: 204 No Content (void)
+- **PATCH 응답**: 204 No Content (void)
 
-### 3-2. 신규 DTO
+### 3-2. DTO
 
 #### `InboundPdaInspectItem.java`
 ```java
@@ -82,66 +113,65 @@ public record InboundPdaInspectItem(
         Integer insQty,
         Integer defectiveQty,
         String insSttsCd
-) {
-    public String rmrk() {
-        return (defectiveQty != null && defectiveQty > 0) ? "DEFECT:" + defectiveQty : null;
-    }
-}
+) {}
+// rmrk() 메서드 제거 — defect_qty 컬럼 직접 저장으로 변경
 ```
-
-- `rmrk()`는 MyBatis `#{item.rmrk}` 호출 시 자동으로 사용되는 메서드
-- 불량수량이 없으면 `null` 반환 → DB에 NULL 저장
 
 #### `InboundPdaInspectRequest.java`
 ```java
-public record InboundPdaInspectRequest(List<InboundPdaInspectItem> items) {}
-```
-
-### 3-3. 기존 DTO 수정
-
-#### `InboundPdaDetailItem.java` — `insQty` 필드 추가
-```java
-public record InboundPdaDetailItem(
-        String ibNo, String goodsCd, String barcode, String goodsNm,
-        String exp, Integer poQty, Integer ibQty, Integer insQty,  // insQty 추가
-        String insSttsCd, String rmrk
+public record InboundPdaInspectRequest(
+        List<InboundPdaInspectItem> items,
+        boolean complete   // true=검수완료, false=저장(중간)
 ) {}
 ```
 
-### 3-4. MyBatis Mapper XML 변경 (`InboundMapper.xml`)
+#### `InboundPdaDetailItem.java`
+```java
+public record InboundPdaDetailItem(
+        String ibNo, String goodsCd, String barcode, String goodsNm,
+        String exp, Integer poQty, Integer ibQty, Integer insQty,
+        String insSttsCd, Integer defectQty, String rmrk
+) {}
+```
 
-#### resultMap에 `ins_qty` 추가
+### 3-3. MyBatis Mapper XML (`InboundMapper.xml`)
+
+#### resultMap — `defect_qty` 추가
 ```xml
 <resultMap id="inboundPdaDetailItemResultMap" ...>
     <constructor>
         ...
-        <arg column="ib_qty"      javaType="java.lang.Integer"/>
-        <arg column="ins_qty"     javaType="java.lang.Integer"/>  <!-- 추가 -->
+        <arg column="ins_qty"     javaType="java.lang.Integer"/>
         <arg column="ins_stts_cd" javaType="java.lang.String"/>
-        ...
+        <arg column="defect_qty"  javaType="java.lang.Integer"/>  <!-- 추가 -->
+        <arg column="rmrk"        javaType="java.lang.String"/>
     </constructor>
 </resultMap>
 ```
 
-#### `selectInboundDetailsByIbNos` 쿼리에 컬럼 추가
+#### `selectInboundListForPdaSync` — 조회 조건 추가
 ```xml
-COALESCE(d.ib_qty, 0)  AS ib_qty,
-COALESCE(d.ins_qty, 0) AS ins_qty,   -- 추가
-d.ins_stts_cd,
-```
-
-#### 정렬 순서 변경 (입고예정일 오름차순)
-```xml
+WHERE h.center_id = #{centerId}
+  AND h.asn_dt >= #{startDt}
+  AND h.ib_stts_cd IN ('01', '02')   -- 검수전·검수중만 동기화
 ORDER BY h.asn_dt ASC, h.ib_no ASC
 ```
 
-#### 신규 UPDATE 쿼리 (`updateInboundDtlForPdaInspect`)
+#### `selectInboundDetailsByIbNos` — `defect_qty` 추가
+```xml
+COALESCE(d.ins_qty, 0)    AS ins_qty,
+d.ins_stts_cd,
+COALESCE(d.defect_qty, 0) AS defect_qty,   -- 추가
+d.rmrk
+```
+
+#### `updateInboundDtlForPdaInspect` — `rmrk` → `defect_qty` 교체
 ```xml
 <update id="updateInboundDtlForPdaInspect">
     <foreach item="item" collection="items" separator=";">
         UPDATE wms.ib_list_dtl
         SET ins_qty     = #{item.insQty},
-            rmrk        = #{item.rmrk},
+            defect_qty  = #{item.defectiveQty},   -- rmrk 방식 제거
             ins_stts_cd = #{item.insSttsCd}
         WHERE ib_no    = #{ibNo}
           AND goods_cd = #{item.goodsCd}
@@ -151,31 +181,85 @@ ORDER BY h.asn_dt ASC, h.ib_no ASC
 </update>
 ```
 
-- `ib_list_hdr.ib_stts_cd`는 **변경하지 않음** (검수는 이미 입고완료된 항목에 대한 후처리)
-- `foreach`에 `separator=";"` 사용 → 한 트랜잭션에서 다중 UPDATE
+#### 신규 쿼리 3개
 
-### 3-5. Mapper 인터페이스 추가
-```java
-void updateInboundDtlForPdaInspect(
-    @Param("ibNo") String ibNo,
-    @Param("items") List<InboundPdaInspectItem> items
-);
+```xml
+<!-- 현지매입·반품: dtl.ib_qty = ins_qty + defect_qty -->
+<update id="updateIbQtyForLocalPurchase">
+    UPDATE wms.ib_list_dtl
+    SET ib_qty = ins_qty + defect_qty
+    WHERE ib_no = #{ibNo}
+      AND EXISTS (
+          SELECT 1 FROM wms.ib_list_hdr
+          WHERE ib_no = #{ibNo} AND ib_type_cd IN ('02', '03')
+      )
+</update>
+
+<!-- 저장 시 hdr.tot_ib_qty 갱신 (현지매입·반품) -->
+<update id="updateHdrTotIbQtyForLocalPurchase">
+    UPDATE wms.ib_list_hdr
+    SET tot_ib_qty = (SELECT COALESCE(SUM(ib_qty), 0) FROM wms.ib_list_dtl WHERE ib_no = #{ibNo})
+    WHERE ib_no = #{ibNo} AND ib_type_cd IN ('02', '03')
+</update>
+
+<!-- 저장 시 hdr.ib_stts_cd = '02' (검수전→검수중 전이만) -->
+<update id="updateHdrSttsForPdaInspect">
+    UPDATE wms.ib_list_hdr
+    SET ib_stts_cd = #{sttsCd}
+    WHERE ib_no = #{ibNo}
+    <if test="sttsCd == '02'">
+        AND ib_stts_cd = '01'
+    </if>
+</update>
 ```
 
-### 3-6. Service / Controller
-```java
-// InboundService.java
-void savePdaInspection(String ibNo, InboundPdaInspectRequest request);
+- **검수완료** 시 hdr 상태 처리는 기존 `updateInboundAsnConfirmed` 재사용  
+  (`ib_stts_cd='03'`, `ib_dt=today`, `tot_ib_qty=SUM(dtl.ib_qty)` 일괄 처리)
 
+### 3-4. Mapper 인터페이스 (`InboundMapper.java`)
+
+```java
+// 기존
+void updateInboundDtlForPdaInspect(@Param("ibNo") String ibNo,
+        @Param("items") List<InboundPdaInspectItem> items);
+
+// 신규
+void updateIbQtyForLocalPurchase(@Param("ibNo") String ibNo);
+void updateHdrTotIbQtyForLocalPurchase(@Param("ibNo") String ibNo);
+void updateHdrSttsForPdaInspect(@Param("ibNo") String ibNo, @Param("sttsCd") String sttsCd);
+```
+
+### 3-5. Service
+
+```java
 // InboundServiceImpl.java
 @Override
 @Transactional
 public void savePdaInspection(String ibNo, InboundPdaInspectRequest request) {
     if (request.items() == null || request.items().isEmpty()) return;
-    inboundMapper.updateInboundDtlForPdaInspect(ibNo, request.items());
-}
 
-// InboundController.java
+    // 1. dtl ins_qty, defect_qty, ins_stts_cd 업데이트
+    inboundMapper.updateInboundDtlForPdaInspect(ibNo, request.items());
+
+    // 2. 현지매입·반품: dtl.ib_qty = ins_qty + defect_qty
+    inboundMapper.updateIbQtyForLocalPurchase(ibNo);
+
+    String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+
+    if (request.complete()) {
+        // 검수완료: hdr ib_stts_cd='03', ib_dt, tot_ib_qty 일괄 처리
+        inboundMapper.updateInboundAsnConfirmed(ibNo, today);
+    } else {
+        // 저장: 현지매입·반품 tot_ib_qty 갱신 후 hdr 검수중으로 전환
+        inboundMapper.updateHdrTotIbQtyForLocalPurchase(ibNo);
+        inboundMapper.updateHdrSttsForPdaInspect(ibNo, "02");
+    }
+}
+```
+
+### 3-6. Controller
+```java
+// InboundController.java (기존 유지)
 @PatchMapping("/pda/{ibNo}/inspect")
 public void savePdaInspection(
         @PathVariable String ibNo,
@@ -203,38 +287,28 @@ data
 
 ---
 
-### 4-2. Domain 모델 수정
-
-#### `InspectionItem` — `insQty`, `defectiveQty` getter, `copyWith` 추가
+### 4-2. Domain 모델 (`InspectionItem`)
 
 ```dart
 class InspectionItem {
-  final int insQty;       // 검수자 입력 정상수량 (DB: ins_qty)
+  final int insQty;     // 정상수량 (DB: ins_qty)
+  final int defectQty;  // 불량수량 (DB: defect_qty) — 신규
+  final String? rmrk;   // 향후 활용을 위해 유지
   // ...
 
-  int get defectiveQty {  // rmrk에서 파싱 (DEFECT:{n})
-    if (rmrk == null) return 0;
-    final match = RegExp(r'DEFECT:(\d+)').firstMatch(rmrk!);
-    return int.tryParse(match?.group(1) ?? '') ?? 0;
-  }
-
-  InspectionItem copyWith({int? insQty, int? defectiveQtyOverride, String? insSttsCd}) {
-    final newRmrk = defectiveQtyOverride != null
-        ? (defectiveQtyOverride > 0 ? 'DEFECT:$defectiveQtyOverride' : null)
-        : rmrk;
-    return InspectionItem(...);
-  }
+  // copyWith — defectiveQtyOverride 제거, defectQty로 교체
+  InspectionItem copyWith({int? insQty, int? defectQty, String? insSttsCd}) { ... }
 }
 ```
 
-- `toMap()` / `fromMap()` / `fromJson()` 모두 `ins_qty` ↔ `insQty` 매핑 추가
-- 불량수량은 별도 컬럼 없이 `rmrk` 필드에 `DEFECT:N` 포맷으로 저장/파싱
+- `defectiveQty` computed getter (rmrk DEFECT 파싱) 제거 → `defectQty` 직접 필드로 변경
+- `fromJson`, `toMap`, `fromMap` 모두 `defect_qty` ↔ `defectQty` 매핑 포함
 
 ---
 
 ### 4-3. Data Layer
 
-#### `InboundLocalStore` (abstract interface) — 신규 메서드 2개
+#### `InboundLocalStore` (abstract interface)
 ```dart
 Future<void> updateItemInspection({
   required String ibNo,
@@ -242,79 +316,75 @@ Future<void> updateItemInspection({
   required String barcode,
   required String exp,
   required int insQty,
-  required int defectiveQty,
+  required int defectQty,     // defectiveQty → defectQty로 변경
   required String insSttsCd,
+});
+
+Future<void> updateHdrStatus({  // 신규
+  required String ibNo,
+  required String ibSttsCd,
 });
 
 Future<int> countWaitingInbound(String centerId);
 ```
 
 #### `InboundLocalDatasource` (SQLite)
-- `updateItemInspection`: `UPDATE ib_list_dtl SET ins_qty=?, rmrk=?, ins_stts_cd=? WHERE ...`
-- `countWaitingInbound`: `SELECT SUM(tot_po_qty) FROM ib_list_hdr WHERE center_id=? AND ib_stts_cd='01'`
-- `getContainersByCenter`: `ib_stts_cd = '03'` 필터, `asn_dt ASC` 정렬
+- `getContainersByCenter`: `ib_stts_cd IN ('01','02')` 필터, `asn_dt ASC` 정렬
+- `updateItemInspection`: `SET ins_qty=?, defect_qty=?, ins_stts_cd=?` (rmrk 제거)
+- `updateHdrStatus`: `'02'`는 `ib_stts_cd='01'` 조건부 전이, `'03'`은 무조건 업데이트
 
 #### `WebInboundLocalDatasource` (Sembast)
-- 동일 인터페이스를 Sembast `StoreRef` API로 구현
-- `Filter.and([...'03'])` 으로 필터링
-- `fold<int>` 타입 명시로 타입 추론 오류 방지
+- `getContainersByCenter`: `Filter.or([Filter.equals('ib_stts_cd','01'), Filter.equals('ib_stts_cd','02')])`
+- `updateItemInspection`: `defect_qty` 저장 (rmrk 제거)
+- `updateHdrStatus`: 레코드 조회 후 `ib_stts_cd` 덮어쓰기
 
-#### `InboundRemoteDatasource` — `patchInspection` 추가
+#### `InboundRemoteDatasource`
 ```dart
 Future<void> patchInspection({
   required String ibNo,
   required List<Map<String, dynamic>> items,
+  required bool complete,   // 신규 — 백엔드 complete 플래그 전달
 }) async {
-  await _dio.patch('/inbound/pda/$ibNo/inspect', data: {'items': items});
+  await _dio.patch('/inbound/pda/$ibNo/inspect',
+      data: {'items': items, 'complete': complete});
 }
 ```
 
-#### `InboundRepository` — `saveInspection` 추가
+#### `InboundRepository` — `saveInspection`
+
 ```
 saveInspection(ibNo, items, complete):
-  1. 로컬 DB 즉시 업데이트 (updateItemInspection × items)
-  2. 온라인이면 → patchInspection API 호출 → 성공 시 종료
-  3. 오프라인 또는 API 실패 → outbox에 INSP_SAVE / INSP_COMPLETE 이벤트 적재
+  1. 로컬 dtl 업데이트 (updateItemInspection × items)
+  2. 로컬 hdr 상태 업데이트 (updateHdrStatus: '02' 또는 '03')
+  3. 온라인이면 → patchInspection(ibNo, items, complete) → 성공 시 종료
+  4. 오프라인 또는 API 실패 → outbox에 INSP_SAVE / INSP_COMPLETE 적재
 ```
 
-- **로컬 우선 저장**: API 실패해도 로컬 DB는 항상 업데이트됨
-- `complete=true` → `insSttsCd = '03'`, `false` → `'02'`
-- `IB_STTS_CD`(헤더 상태)는 변경하지 않음
+- **로컬 우선**: API 실패해도 로컬 DB는 항상 반영
+- `complete=true` → `insSttsCd='03'`, `false` → `'02'`
+- payload의 `defectiveQty` 키: `item.defectQty` 값 사용
 
 ---
 
 ### 4-4. Sync (아웃박스 패턴)
 
-#### `SyncModels` — 검수 이벤트 타입 추가
+#### `SyncModels`
 ```dart
 static const String inspSave     = 'INSP_SAVE';
 static const String inspComplete = 'INSP_COMPLETE';
 ```
 
-#### `SyncQueueService.flushPending` — 실제 dispatch로 교체
-```dart
-Future<void> flushPending(
-  Future<void> Function(String eventType, Map<String, dynamic> payload) onDispatch,
-) async {
-  final pending = await outboxDao.findPendingOutboxes();
-  for (final row in pending) {
-    try {
-      await onDispatch(row['event_type_cd'], jsonDecode(row['payload_json']));
-      // → DONE
-    } catch (_) {
-      // → FAILED, retryCnt + 1
-    }
-  }
-}
-```
-
-#### `sync_on_reconnect.dart` — 네트워크 복구 시 아웃박스 플러시
+#### `sync_on_reconnect.dart` — `complete` 플래그 추가
 ```dart
 await SyncQueueService(OutboxDao()).flushPending((eventType, payload) async {
   if (eventType == SyncModels.inspSave || eventType == SyncModels.inspComplete) {
     final ibNo = payload['ibNo'] as String;
     final items = (payload['items'] as List).map(...).toList();
-    await remote.patchInspection(ibNo: ibNo, items: items);
+    await remote.patchInspection(
+      ibNo: ibNo,
+      items: items,
+      complete: eventType == SyncModels.inspComplete,   // 신규
+    );
   }
 });
 ```
@@ -323,60 +393,54 @@ await SyncQueueService(OutboxDao()).flushPending((eventType, payload) async {
 
 ### 4-5. Presentation Layer
 
-#### `InboundNotifier` — `saveInspection` 추가
+#### `InboundNotifier.saveInspection`
 ```dart
 Future<void> saveInspection({String ibNo, List<InspectionItem> items, bool complete}) async {
   state = state.copyWith(isLoading: true);
   await repository.saveInspection(ibNo: ibNo, items: items, complete: complete);
-  final containers = await repository.getContainers(); // 목록 갱신
+  final containers = await repository.getContainers();
   state = state.copyWith(isLoading: false, containers: containers);
 }
 ```
 
-#### `ReceivingInspectionDetailScreen` — `ConsumerStatefulWidget`으로 변환
+#### `ReceivingInspectionDetailScreen` 버튼 동작
 
-| 버튼 | 조건 | 동작 |
-|------|------|------|
-| 확인 | 항상 활성 | `saveInspection(complete: false)` → `ins_stts_cd = '02'` |
-| 검수 완료 | 모든 항목 `정상+불량 == ib_qty` 일 때 활성화 | `saveInspection(complete: true)` → `ins_stts_cd = '03'` → pop |
+| 버튼 | 텍스트 | 조건 | 동작 |
+|------|--------|------|------|
+| 저장 | `저장` (변경: 확인→저장) | 항상 활성 | `saveInspection(complete: false)` → dtl `ins_stts_cd='02'`, hdr `ib_stts_cd='02'` |
+| 검수 완료 | `검수 완료` | 모든 항목 `정상+불량 == ibQty` | `saveInspection(complete: true)` → dtl `ins_stts_cd='03'`, hdr `ib_stts_cd='03'`, `ib_dt` 세팅 → pop |
 
-- 저장 중 `_isSaving = true` → 버튼 비활성화 + 스피너 표시
-- 완료 후 자동으로 상위 목록 화면으로 복귀
+- 검수완료 후 컨테이너가 목록에서 자동으로 제외됨 (ib_stts_cd='03'은 조회 조건 밖)
+- `_isAllCompleted()`: `item.ibQty > 0 && (normalQty + defectiveQty) == item.ibQty`
 
-#### 수량 입력 UX 개선
-- `onTap`: 필드 탭 시 전체 선택 → 기존 `0` 즉시 대체 입력 가능
-- `inputFormatters: [FilteringTextInputFormatter.digitsOnly]`: 숫자만 입력 허용
+#### 수량 입력 UX
+- `onTap`: 필드 탭 시 전체선택 → 기존 `0` 즉시 대체
+- `FilteringTextInputFormatter.digitsOnly`: 숫자만 입력 허용
+- 초기값: `item.insQty`, `item.defectQty` (DB 저장값 복원)
 
-#### `InspectionItemCard` — 수치 기준 수정
-| 항목 | 변경 전 | 변경 후 |
-|------|---------|---------|
-| 우측 N (`검수 X / N`) | `orderedQty` (= `poQty`) | `ibQty` (실제 입고수량) |
-| 초과 판정 기준 | `inspectedTotal > poQty` | `inspectedTotal > ibQty` |
-| helper 텍스트 | — | `발주 수량: {poQty}개` |
+#### `InspectionItemCard` 수치 기준
 
-#### `InspectionContainerCard` — 수치 기준 수정
-| 항목 | 변경 전 | 변경 후 |
-|------|---------|---------|
-| 우측 N (`검수 X / N`) | items 합계 `poQty` | `container.totIbQty` |
-| 뱃지 추가 | — | `발주 {totPoQty}` 뱃지 |
+| 항목 | 내용 |
+|------|------|
+| 우측 N (`검수 X / N`) | `ibQty` (실제 입고수량) |
+| 초과 판정 | `inspectedTotal > ibQty` |
+| helper 텍스트 | `발주 수량: {poQty}개` |
 
-#### `ReceivingInspectionScreen`
-- `_isContainerCompleted`: `ibQty` 기준으로 변경
-- `_ensureControllers`: 신규 항목은 `item.insQty` / `item.defectiveQty`로 초기화 (재진입 시 기존 값 유지)
-- 컨테이너 정렬: `asn_dt ASC` (입고예정일 빠른 순)
+#### `InspectionContainerCard` 수치 기준
+
+| 항목 | 내용 |
+|------|------|
+| 우측 N (`검수 X / N`) | `container.totIbQty` |
+| 뱃지 | `발주 {totPoQty}` 추가 |
 
 ---
 
 ### 4-6. 홈화면 입고 대기 카운트
 
-#### 문제
-`HomeState.initial()`에 `waitingInboundCount: 15` 하드코딩 → 실제 DB와 무관하게 고정 표시
-
-#### 해결
 ```dart
 // HomeNotifier
 Future<void> loadUnsyncedCount() async {
-  final centerId = _centerId(); // authSessionProvider에서 읽음
+  final centerId = _centerId();
   final waitingInboundCount = centerId != null
       ? await ref.read(inboundLocalStoreProvider).countWaitingInbound(centerId)
       : 0;
@@ -384,9 +448,8 @@ Future<void> loadUnsyncedCount() async {
 }
 ```
 
-- `countWaitingInbound`: `ib_stts_cd = '01'`인 헤더들의 `tot_po_qty` 합계
-- 로그인 후 `loadUnsyncedCount()` 호출 시 실제 값으로 갱신
-- `HomeState.initial()` 모든 더미 숫자 → 0으로 교체
+- `countWaitingInbound`: `ib_stts_cd='01'` 헤더의 `tot_po_qty` 합계
+- `HomeState.initial()` 더미 숫자 → 모두 0으로 교체
 
 ---
 
@@ -400,48 +463,51 @@ main()
         → InboundRepository.syncInboundOnStartup()
               → ['HN', 'HC'] 순회
               → GET /inbound/pda/sync?centerId={id}&since={lastSyncTime}
+              → ib_stts_cd IN ('01','02') 만 서버에서 내려옴
               → 로컬 DB upsert
 ```
 
-- 앱 시작 시 로그인 전에도 동기화: centerId가 없으므로 `['HN', 'HC']`를 직접 순회
-- `since` 파라미터가 있으면 증분 동기화, 없으면 최근 30일 전체 동기화
-- Spring Security: `/inbound/pda/**` → `permitAll()` (JWT 불필요)
+- 로그인 전에도 동기화: `['HN','HC']` 직접 순회 (authSessionProvider 불필요)
+- `since` 파라미터 있으면 증분, 없으면 최근 30일 전체 동기화
+- 완료된 컨테이너(`ib_stts_cd='03'`)는 서버 응답에서 제외 → 로컬 DB에서도 자연히 사라짐
 
 ---
 
 ## 6. 전체 변경 파일 목록
 
 ### 백엔드
+
 | 파일 | 변경 내용 |
 |------|-----------|
 | `SecurityConfig.java` | `/inbound/pda/**` permitAll 추가 |
-| `InboundPdaDetailItem.java` | `insQty` 필드 추가 |
-| `InboundPdaInspectItem.java` | 신규 생성 |
-| `InboundPdaInspectRequest.java` | 신규 생성 |
-| `InboundMapper.java` | `updateInboundDtlForPdaInspect` 추가 |
-| `InboundMapper.xml` | resultMap에 `ins_qty` 추가, 동기화 쿼리에 `ins_qty` 추가, UPDATE 쿼리 추가, 정렬 ASC 변경 |
+| `InboundPdaDetailItem.java` | `insQty`, `defectQty` 필드 추가, `rmrk` 유지 |
+| `InboundPdaInspectItem.java` | 신규 생성 → `rmrk()` 메서드 제거 (defect_qty 컬럼 직접 사용) |
+| `InboundPdaInspectRequest.java` | 신규 생성 → `complete` boolean 추가 |
+| `InboundMapper.java` | `updateInboundDtlForPdaInspect`, `updateIbQtyForLocalPurchase`, `updateHdrTotIbQtyForLocalPurchase`, `updateHdrSttsForPdaInspect` 추가 |
+| `InboundMapper.xml` | resultMap `defect_qty` 추가, sync 쿼리 `ib_stts_cd IN ('01','02')` 필터, UPDATE `defect_qty` 교체, 신규 쿼리 3개 |
 | `InboundService.java` | `savePdaInspection` 인터페이스 추가 |
-| `InboundServiceImpl.java` | `savePdaInspection` 구현 |
+| `InboundServiceImpl.java` | `savePdaInspection` 구현 — ib_type_cd 분기, complete 분기 |
 | `InboundController.java` | `PATCH /pda/{ibNo}/inspect` 엔드포인트 추가 |
 
 ### 프론트엔드
+
 | 파일 | 변경 내용 |
 |------|-----------|
-| `app_database.dart` | v10 마이그레이션: `ib_list_dtl.ins_qty` 컬럼 추가 |
-| `inspection_item.dart` | `insQty`, `defectiveQty` getter, `copyWith`, JSON/Map 직렬화 추가 |
-| `inbound_local_store.dart` | `updateItemInspection`, `countWaitingInbound` 인터페이스 추가 |
-| `inbound_local_datasource.dart` | 두 메서드 구현, `ib_stts_cd='03'` 필터, ASC 정렬 |
-| `web_inbound_local_datasource.dart` | 두 메서드 구현, Sembast 필터/정렬 |
-| `inbound_remote_datasource.dart` | `patchInspection` 추가 |
-| `inbound_repository.dart` | `saveInspection` 추가 (로컬 우선 + 아웃박스 폴백) |
+| `app_database.dart` | v11 마이그레이션: `ib_list_dtl.defect_qty` 컬럼 추가 |
+| `inspection_item.dart` | `defectQty` 필드 추가, `defectiveQty` getter 및 DEFECT 파싱 제거, `copyWith` 파라미터 교체 |
+| `inbound_local_store.dart` | `updateItemInspection(defectQty)`, `updateHdrStatus` 추가 |
+| `inbound_local_datasource.dart` | `ib_stts_cd IN ('01','02')` 필터, `defect_qty` 저장, `updateHdrStatus` 구현 |
+| `web_inbound_local_datasource.dart` | `Filter.or` 방식 IN 조건, `defect_qty` 저장, `updateHdrStatus` 구현 |
+| `inbound_remote_datasource.dart` | `patchInspection(complete)` 파라미터 추가 |
+| `inbound_repository.dart` | `defectQty` 사용, `updateHdrStatus` 호출, `complete` 전달 |
 | `sync_models.dart` | `inspSave`, `inspComplete` 상수 추가 |
 | `sync_queue_service.dart` | `flushPending(onDispatch)` 실제 구현으로 교체 |
-| `sync_on_reconnect.dart` | 네트워크 복구 시 검수 아웃박스 플러시 연결 |
+| `sync_on_reconnect.dart` | 아웃박스 플러시 + `complete` 플래그 전달 |
 | `inbound_provider.dart` | `inboundLocalStoreProvider` 공개, `InboundNotifier.saveInspection` 추가 |
-| `inspection_item_card.dart` | `ibQty` 기준 수치, `발주 수량` helper, 전체선택 onTap, 숫자전용 inputFormatters |
+| `inspection_item_card.dart` | `ibQty` 기준, `발주 수량` helper, 전체선택 onTap, 숫자전용 inputFormatters |
 | `inspection_container_card.dart` | `totIbQty` 기준, 발주수량 뱃지 추가 |
-| `receiving_inspection_detail_screen.dart` | `ConsumerStatefulWidget`, 확인/검수완료 버튼 연결 |
-| `receiving_inspection_screen.dart` | `ibQty` 기준 완료 판정, controller 초기값 기존 `insQty` 반영 |
+| `receiving_inspection_detail_screen.dart` | 버튼 텍스트 "확인"→"저장", `copyWith(defectQty:)` 교체 |
+| `receiving_inspection_screen.dart` | `ibQty` 기준 완료 판정, controller 초기값 `defectQty` 반영 |
 | `home_provider.dart` | `Ref` 기반으로 변경, 실제 입고 대기 카운트 로드 |
 | `home_state.dart` | 더미 초기값 0으로 교체 |
 | `main.dart` | `goodsBootstrapProvider`, `inboundBootstrapProvider` 추가 |
