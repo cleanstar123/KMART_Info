@@ -1,7 +1,7 @@
 # 상품입고검수 기능 구현 상세 정리
 
 > 최초 작성일: 2026-06-02  
-> 최종 수정일: 2026-06-02  
+> 최종 수정일: 2026-06-04  
 > 프로젝트: K-MART WMS PDA App  
 > 브랜치: dev_wonjun
 
@@ -330,11 +330,14 @@ Future<int> countWaitingInbound(String centerId);
 
 #### `InboundLocalDatasource` (SQLite)
 - `getContainersByCenter`: `ib_stts_cd IN ('01','02')` 필터, `asn_dt ASC` 정렬
+- `syncInbound` 전체 동기화 시 삭제 범위: `ib_stts_cd IN ('01','02')`만 삭제 — `'03'`(검수완료)은 삭제하지 않음
+- hdr INSERT: `ConflictAlgorithm.ignore` — 기존 로컬 상태를 서버 데이터로 덮어쓰지 않음 (오프라인 완료 보호)
 - `updateItemInspection`: `SET ins_qty=?, defect_qty=?, ins_stts_cd=?` (rmrk 제거)
 - `updateHdrStatus`: `'02'`는 `ib_stts_cd='01'` 조건부 전이, `'03'`은 무조건 업데이트
 
 #### `WebInboundLocalDatasource` (Sembast)
 - `getContainersByCenter`: `Filter.or([Filter.equals('ib_stts_cd','01'), Filter.equals('ib_stts_cd','02')])`
+- `syncInbound` 전체 동기화 시 삭제 범위: `ib_stts_cd IN ('01','02')`만 삭제 — `'03'` 보호
 - `updateItemInspection`: `defect_qty` 저장 (rmrk 제거)
 - `updateHdrStatus`: 레코드 조회 후 `ib_stts_cd` 덮어쓰기
 
@@ -374,19 +377,41 @@ static const String inspSave     = 'INSP_SAVE';
 static const String inspComplete = 'INSP_COMPLETE';
 ```
 
-#### `sync_on_reconnect.dart` — `complete` 플래그 추가
+#### `sync_on_reconnect.dart` — 네트워크 복구 시 실행 순서
+
+> **중요**: 아웃박스 플러시가 반드시 인바운드 sync보다 먼저 실행되어야 한다.  
+> 플러시 전에 sync를 실행하면 서버의 stale 데이터(`ib_stts_cd='01'`)가 로컬의 완료 상태(`'03'`)를 덮어쓸 수 있다.
+
 ```dart
-await SyncQueueService(OutboxDao()).flushPending((eventType, payload) async {
-  if (eventType == SyncModels.inspSave || eventType == SyncModels.inspComplete) {
-    final ibNo = payload['ibNo'] as String;
-    final items = (payload['items'] as List).map(...).toList();
-    await remote.patchInspection(
-      ibNo: ibNo,
-      items: items,
-      complete: eventType == SyncModels.inspComplete,   // 신규
-    );
+Future<void> onNetworkRestored(WidgetRef ref) async {
+  // 1. 상품·사용자 마스터 동기화
+  await ref.read(goodsRepositoryProvider).syncGoodsOnStartup();
+  await ref.read(authRepositoryProvider).syncUsersOnStartup();
+
+  // 2. 아웃박스 플러시 (반드시 inbound sync 이전에 실행)
+  if (AuthTokenHolder.token != null) {
+    await SyncQueueService(OutboxDao()).flushPending((eventType, payload) async {
+      if (eventType == SyncModels.inspSave || eventType == SyncModels.inspComplete) {
+        final ibNo = payload['ibNo'] as String;
+        final items = (payload['items'] as List).map(...).toList();
+        await remote.patchInspection(
+          ibNo: ibNo,
+          items: items,
+          complete: eventType == SyncModels.inspComplete,
+        );
+      }
+      // putaway 이벤트 처리 ...
+    });
   }
-});
+
+  // 3. 서버 데이터 동기화 (플러시 완료 후)
+  await ref.read(inboundRepositoryProvider).syncInboundOnStartup();
+  await ref.read(putawayRepositoryProvider).syncPutawayOnStartup();
+
+  // 4. 홈 카운트 갱신
+  if (AuthTokenHolder.token == null) return;
+  await ref.read(homeProvider.notifier).loadUnsyncedCount();
+}
 ```
 
 ---
@@ -400,8 +425,14 @@ Future<void> saveInspection({String ibNo, List<InspectionItem> items, bool compl
   await repository.saveInspection(ibNo: ibNo, items: items, complete: complete);
   final containers = await repository.getContainers();
   state = state.copyWith(isLoading: false, containers: containers);
+  // 오프라인 작업도 홈 대시보드에 즉시 반영 (로컬 DB + 아웃박스 기반이므로 온/오프 무관)
+  await _ref.read(homeProvider.notifier).loadUnsyncedCount();
 }
 ```
+
+- 검수 저장/완료 후 `homeProvider.notifier.loadUnsyncedCount()` 호출
+  - `waitingInboundCount` 감소 (완료된 컨테이너는 `ib_stts_cd='03'`이므로 카운트 제외)
+  - `unsyncedCount` 증가 (아웃박스에 대기 이벤트 추가됨)
 
 #### `ReceivingInspectionDetailScreen` 버튼 동작
 
@@ -496,14 +527,14 @@ main()
 | `app_database.dart` | v11 마이그레이션: `ib_list_dtl.defect_qty` 컬럼 추가 |
 | `inspection_item.dart` | `defectQty` 필드 추가, `defectiveQty` getter 및 DEFECT 파싱 제거, `copyWith` 파라미터 교체 |
 | `inbound_local_store.dart` | `updateItemInspection(defectQty)`, `updateHdrStatus` 추가 |
-| `inbound_local_datasource.dart` | `ib_stts_cd IN ('01','02')` 필터, `defect_qty` 저장, `updateHdrStatus` 구현 |
-| `web_inbound_local_datasource.dart` | `Filter.or` 방식 IN 조건, `defect_qty` 저장, `updateHdrStatus` 구현 |
+| `inbound_local_datasource.dart` | `ib_stts_cd IN ('01','02')` 필터, `defect_qty` 저장, `updateHdrStatus` 구현, full sync 삭제 범위 `('01','02')`로 제한, hdr INSERT `ConflictAlgorithm.ignore` 적용 |
+| `web_inbound_local_datasource.dart` | `Filter.or` 방식 IN 조건, `defect_qty` 저장, `updateHdrStatus` 구현, full sync 삭제 범위 `('01','02')`로 제한 |
 | `inbound_remote_datasource.dart` | `patchInspection(complete)` 파라미터 추가 |
 | `inbound_repository.dart` | `defectQty` 사용, `updateHdrStatus` 호출, `complete` 전달 |
 | `sync_models.dart` | `inspSave`, `inspComplete` 상수 추가 |
 | `sync_queue_service.dart` | `flushPending(onDispatch)` 실제 구현으로 교체 |
-| `sync_on_reconnect.dart` | 아웃박스 플러시 + `complete` 플래그 전달 |
-| `inbound_provider.dart` | `inboundLocalStoreProvider` 공개, `InboundNotifier.saveInspection` 추가 |
+| `sync_on_reconnect.dart` | 아웃박스 플러시를 inbound sync 이전으로 이동 (sync 순서 버그 수정), `complete` 플래그 전달 |
+| `inbound_provider.dart` | `inboundLocalStoreProvider` 공개, `InboundNotifier.saveInspection` 추가, 저장 완료 후 `homeProvider.notifier.loadUnsyncedCount()` 호출 추가 |
 | `inspection_item_card.dart` | `ibQty` 기준, `발주 수량` helper, 전체선택 onTap, 숫자전용 inputFormatters |
 | `inspection_container_card.dart` | `totIbQty` 기준, 발주수량 뱃지 추가 |
 | `receiving_inspection_detail_screen.dart` | 버튼 텍스트 "확인"→"저장", `copyWith(defectQty:)` 교체 |
