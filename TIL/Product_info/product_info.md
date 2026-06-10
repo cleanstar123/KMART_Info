@@ -539,7 +539,7 @@ GoodsRepository.syncGoods()
 동기화 시 3개 API를 `Future.wait`로 동시 호출하여 속도를 높이고, DB 저장은 순차로 진행하여 SQLite 잠금 충돌을 방지한다.
 
 ### 주 로케이션 선정
-SQL의 `ARRAY_AGG(loc_id ORDER BY avl_stk DESC)[1]`을 사용하여 가용 재고가 가장 많은 로케이션을 주 로케이션으로 동적 계산한다. md_goods의 loc_id 컬럼과 별개로 현재 재고 상태 기준으로 결정된다.
+SQL의 `ARRAY_AGG(loc_id ORDER BY avl_stk DESC)[1]`을 사용하여 가용 재고가 가장 많은 로케이션을 주 로케이션으로 동적 계산한다. md_goods의 loc_id 컬럼과 별개로 현재 재고 상태 기준으로 결정된다. (loc_id 컬럼 값을 주로케이션으로 해야할지 의문?)
 
 ### 증분 동기화
 마지막 동기화 시각(`syncedAt`)을 로컬 AppSetting 테이블에 저장하고, 다음 동기화 시 `since` 파라미터로 넘긴다. 서버에서 `upd_dt >= since`(상품) 또는 `reg_dt >= since`(이력) 조건으로 변경분만 반환한다.
