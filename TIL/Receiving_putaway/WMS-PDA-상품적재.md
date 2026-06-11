@@ -99,12 +99,12 @@ class PutawayState {
 
 **주요 메서드:**
 
-| 메서드 | 역할 |
-|--------|------|
-| `load()` | 적재 대기 목록 로드 (온라인: 서버 → 로컬 sync, 오프라인: 로컬 폴백) |
-| `validateLocation(locId)` | 로케이션 유효성 검증, `scannedLocation` 업데이트 |
-| `executePutawayItem({item, locId})` | 적재 실행, 성공 시 items 목록에서 해당 항목 제거 |
-| `clearLocation()` | 스캔된 로케이션 초기화 |
+| 메서드                                 | 역할                                           |
+| ----------------------------------- | -------------------------------------------- |
+| `load()`                            | 적재 대기 목록 로드 (온라인: 서버 → 로컬 sync, 오프라인: 로컬 폴백) |
+| `validateLocation(locId)`           | 로케이션 유효성 검증, `scannedLocation` 업데이트          |
+| `executePutawayItem({item, locId})` | 적재 실행, 성공 시 items 목록에서 해당 항목 제거              |
+| `clearLocation()`                   | 스캔된 로케이션 초기화                                 |
 
 ---
 
@@ -152,13 +152,13 @@ await Future.wait([
 
 **파일:** `putaway_remote_datasource.dart`
 
-| 메서드 | HTTP | 경로 |
-|--------|------|------|
-| `fetchPutawayPending()` | GET | `/inbound/pda/putaway/pending?centerId=` |
-| `fetchLocationsForSync()` | GET | `/inbound/pda/location/sync?centerId=` |
-| `fetchLocationInfo()` | GET | `/inbound/pda/location/{locId}?centerId=` |
-| `postPutawayItem()` | POST | `/inbound/pda/putaway/execute` |
-| `postPutaway()` | POST | `/inbound/pda/{ibNo}/putaway` |
+| 메서드                       | HTTP | 경로                                        |
+| ------------------------- | ---- | ----------------------------------------- |
+| `fetchPutawayPending()`   | GET  | `/inbound/pda/putaway/pending?centerId=`  |
+| `fetchLocationsForSync()` | GET  | `/inbound/pda/location/sync?centerId=`    |
+| `fetchLocationInfo()`     | GET  | `/inbound/pda/location/{locId}?centerId=` |
+| `postPutawayItem()`       | POST | `/inbound/pda/putaway/execute`            |
+| `postPutaway()`           | POST | `/inbound/pda/{ibNo}/putaway`             |
 
 `postPutawayItem` 요청 body:
 ```json
