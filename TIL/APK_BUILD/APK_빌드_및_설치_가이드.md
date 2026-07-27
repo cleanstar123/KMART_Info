@@ -36,6 +36,56 @@ flutter doctor
 
 ---
 
+## 1-1. flutter doctor 오류 해결
+
+### Android toolchain 오류 발생 시
+
+`flutter doctor` 실행 결과에서 아래 두 가지 오류가 발생할 수 있음.
+
+#### 오류 1: cmdline-tools component is missing
+
+```
+[!] Android toolchain
+    X cmdline-tools component is missing.
+```
+
+**해결:**
+
+1. Android Studio 실행
+2. 우측 상단 **Settings (톱니바퀴)** → **SDK Manager**
+3. **SDK Tools** 탭 클릭
+4. **Android SDK Command-line Tools (latest)** 체크박스 선택
+5. **Apply → OK**
+
+#### 오류 2: Android license status unknown / Some Android licenses not accepted
+
+```
+[!] Android toolchain
+    ! Some Android licenses not accepted.
+```
+
+cmdline-tools 설치 완료 후 실행:
+
+```bash
+flutter doctor --android-licenses
+```
+
+프롬프트가 여러 번 나오면 모두 `y` 입력.
+
+#### 정상 상태 확인
+
+```bash
+flutter doctor
+```
+
+```
+[√] Android toolchain - develop for Android devices (Android SDK version XX.X.X)
+```
+
+`[√]` 로 표시되면 빌드 준비 완료.
+
+---
+
 ## 2. APK 빌드
 
 프로젝트 루트(`wms_pda_app/`)에서 실행.
