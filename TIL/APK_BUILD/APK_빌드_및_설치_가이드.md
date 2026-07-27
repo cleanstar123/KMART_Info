@@ -110,6 +110,31 @@ flutter build apk --release
 - 파일 크기 최소화
 - 로그 출력 없음
 
+### 실기기(PDA) 빌드 시 백엔드 URL 지정 (필수)
+
+앱의 기본 API 주소(`lib/app/config/env.dart`)는 Android 에뮬레이터 전용 주소(`10.0.2.2`)를 사용한다.
+실제 PDA에서는 이 주소로 서버에 접근할 수 없어 **오프라인으로 잘못 인식**되므로, 빌드 시 반드시 실제 서버 IP를 지정해야 한다.
+
+**1. 백엔드 PC의 Wi-Fi IP 확인 (PowerShell)**
+
+```powershell
+ipconfig
+# → 무선 LAN 어댑터 Wi-Fi: 항목의 IPv4 주소 확인
+# 예: 192.168.110.49
+```
+
+> PDA와 백엔드 PC가 **동일한 Wi-Fi 네트워크**에 연결되어 있어야 함.
+
+**2. IP를 포함한 빌드 명령어**
+
+```bash
+flutter build apk --release --target-platform android-arm64 --dart-define=WMS_BASE_URL=http://192.168.110.49:7100
+```
+
+`192.168.110.49` 부분을 실제 확인한 IP로 교체.
+
+---
+
 ### 아키텍처 지정 빌드 (파일 크기 최적화)
 
 PDA CPU 아키텍처에 맞춰 빌드하면 APK 용량을 크게 줄일 수 있음.
@@ -118,7 +143,7 @@ PDA CPU 아키텍처에 맞춰 빌드하면 APK 용량을 크게 줄일 수 있�
 # PDA 아키텍처 확인 (USB 연결 상태에서)
 adb shell getprop ro.product.cpu.abi
 
-# ARM64 전용 (최신 PDA 대부분)
+# ARM64 전용 (최신 PDA 대부분) — 현재 기기: arm64-v8a
 flutter build apk --release --target-platform android-arm64
 
 # ARM32 전용 (구형 PDA)
